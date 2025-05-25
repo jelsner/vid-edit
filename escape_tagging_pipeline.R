@@ -6,32 +6,28 @@ library(dplyr)
 library(purrr)
 
 # ---- USER INPUTS ----
-video_file <- "your_video.mov"  # <-- Replace with your file
-clip_duration <- 10             # seconds (total clip length)
+video_file <- "vids/IMG_2360.MOV"
+clip_duration <- 20             # seconds (total clip length)
 pre_buffer <- 5                 # seconds before detected word
 output_dir <- "clips"           # folder to save the clips
 
 # ---- STEP 1: Transcribe using Whisper CLI ----
 cat("Transcribing video...\n")
-system(sprintf("whisper %s --output_format json --output_dir .", shQuote(video_file)))
+system(sprintf("/Users/jameselsner/opt/anaconda3/bin/whisper %s --output_format json --output_dir .", shQuote(video_file)))
 
 # ---- STEP 2: Read the transcript JSON ----
 json_file <- paste0(tools::file_path_sans_ext(basename(video_file)), ".json")
 transcript <- fromJSON(json_file)$segments
 
 # ---- STEP 3: Search for Keywords ----
-keywords <- c("throw", "ready", "tip", "point", "off", "angle")
+keywords <- c("ready two one throw", "ready two one go")
 
 tagged_events <- transcript %>%
   filter(grepl(paste0("\\b(", paste(keywords, collapse = "|"), ")\\b"), tolower(text))) %>%
   mutate(
     tag = case_when(
-      grepl("throw", text, ignore.case = TRUE) ~ "Throw Call",
-      grepl("tip", text, ignore.case = TRUE) ~ "Tip",
-      grepl("off", text, ignore.case = TRUE) ~ "Escape Call",
-      grepl("point", text, ignore.case = TRUE) ~ "Point",
-      grepl("angle", text, ignore.case = TRUE) ~ "Angle Call",
-      grepl("ready", text, ignore.case = TRUE) ~ "Ready Call",
+      grepl("ready two one throw", text, ignore.case = TRUE) ~ "Service",
+      grepl("ready two one go", text, ignore.case = TRUE) ~ "Service",
       TRUE ~ "Other"
     )
   )
