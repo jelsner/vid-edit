@@ -2,11 +2,11 @@ library(tuneR)
 library(signal)
 
 # ---- CONFIGURATION ----
-video1 <- "vids/Phone.MOV"
-video2 <- "vids/Camera.mp4"
-audio1 <- "cam1.wav"
-audio2 <- "cam2.wav"
-synced_video2 <- "camera2_synced.mov"
+video1 <- "vids/Phone_Clipped.mp4"
+video2 <- "vids/Camera_Clipped.mp4"
+audio1 <- "auds/cam1.wav"
+audio2 <- "auds/cam2.wav"
+synced_video2 <- "vids/camera2_synced.mov"
 ffmpeg <- "ffmpeg"  # or full path to ffmpeg
 
 # ---- STEP 1: Extract audio from both videos ----
@@ -25,28 +25,45 @@ a1 <- a1[seq(1, length(a1), by = 4)]
 a2 <- a2[seq(1, length(a2), by = 4)]
 
 # ---- STEP 3: Compute cross-correlation ----
+# Use base R cross-correlation instead of FFT method
 # Set time window for lag search
-max_offset_sec <- 3 * 60  # 3 minutes
-effective_sample_rate <- 16000 / 4  # adjust if downsample factor changes
+max_offset_sec <- .5 * 60  # 1/2 minute
+samp_rate <- 16000
+downsample_factor <- 4
+effective_sample_rate <- samp_rate / downsample_factor
 lag_max_samples <- max_offset_sec * effective_sample_rate
 
-# FFT-based cross-correlation
-xc <- xcorr(a1, a2, max.lag = lag_max_samples)
+# Use ccf() for cross-correlation
+ccf_result <- ccf(a1, a2, lag.max = lag_max_samples, plot = FALSE, na.action = na.pass)
+lags_full <- ccf_result$lag
+xc_full <- ccf_result$acf
+time_lags_full <- lags_full / effective_sample_rate
 
-# Compute lag at maximum correlation
-lags <- seq(-lag_max_samples, lag_max_samples)
-max_lag <- lags[which.max(xc)]
+# Extract zoomed window
+plot_window <- abs(time_lags_full) < 10
+plot(
+  time_lags_full[plot_window],
+  xc_full[plot_window],
+  type = "l",
+  xlab = "Lag (seconds)",
+  ylab = "Cross-correlation",
+  main = "Zoomed Cross-Correlation: ±10 sec"
+)
+
+# Identify best match within 10 second window
+search_window <- which(abs(time_lags_full) <= 10)
+max_lag <- lags_full[search_window][which.max(xc_full[search_window])]
 time_offset_sec <- max_lag / effective_sample_rate
-
-cat(sprintf("\n📏 Estimated offset (FFT): %.2f seconds\n", time_offset_sec))
+abline(v = time_offset_sec, col = "red", lty = 2)
+legend("topright", legend = sprintf("Estimated: %.2f sec", time_offset_sec), col = "red", lty = 2, bty = "n")
 
 # ---- STEP 4: Sync video2 using ffmpeg ----
 # If cam2 lags behind cam1, we trim cam2
-if (time_offset_sec > 0) {
-  system(sprintf("%s -ss %.2f -i %s -c copy %s", ffmpeg, time_offset_sec, shQuote(video2), synced_video2))
+if (time_offset_sec < 0) {
+  system(sprintf("%s -ss %.2f -i %s -c copy %s", ffmpeg, abs(time_offset_sec), shQuote(video2), synced_video2))
 } else {
   # If cam2 is early, pad it with silence (not exact frame sync but aligns audio)
-  system(sprintf("%s -itsoffset %.2f -i %s -c copy %s", ffmpeg, abs(time_offset_sec), shQuote(video2), synced_video2))
+  system(sprintf("%s -itsoffset %.2f -i %s -c copy %s", ffmpeg, -time_offset_sec, shQuote(video2), synced_video2))
 }
 
 cat("\n✅ Synced video written to:", synced_video2, "\n")
